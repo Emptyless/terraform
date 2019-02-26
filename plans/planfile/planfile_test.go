@@ -2,6 +2,7 @@ package planfile
 
 import (
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -90,6 +91,17 @@ func TestRoundtrip(t *testing.T) {
 		}
 		if !reflect.DeepEqual(stateFileIn, stateFileOut) {
 			t.Errorf("state file did not survive round-trip\nresult: %sinput: %s", spew.Sdump(stateFileOut), spew.Sdump(stateFileIn))
+		}
+	})
+
+	t.Run("ReadStateFilePermissions", func(t *testing.T) {
+		stat, err := os.Stat(planFn)
+		if err != nil {
+			t.Fatalf("failed to open file: %s", err)
+		}
+		var mode os.FileMode = 0600
+		if !reflect.DeepEqual(stat.Mode(), mode) {
+			t.Errorf("state file is not read/write for user only")
 		}
 	})
 

@@ -90,7 +90,9 @@ require (
 	github.com/mitchellh/go-homedir v1.0.0
 	github.com/mitchellh/go-linereader v0.0.0-20141013185533-07bab5fdd958
 	github.com/mitchellh/go-wordwrap v1.0.0
+	github.com/mitchellh/gox v0.4.0 // indirect
 	github.com/mitchellh/hashstructure v1.0.0
+	github.com/mitchellh/iochan v1.0.0 // indirect
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/mitchellh/panicwrap v0.0.0-20161208170302-ba9e1a65e0f7
 	github.com/mitchellh/prefixedio v0.0.0-20151214002211-6e6954073784

@@ -23,6 +23,11 @@ func Create(filename string, configSnap *configload.Snapshot, stateFile *statefi
 	if err != nil {
 		return err
 	}
+	// Set permission of state file
+	err = f.Chmod(0600)
+	if err != nil {
+		return err
+	}
 	defer f.Close()
 
 	zw := zip.NewWriter(f)
