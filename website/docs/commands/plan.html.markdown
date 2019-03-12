@@ -25,7 +25,7 @@ for later execution with `terraform apply`, which can be useful when
 
 ## Usage
 
-Usage: `terraform plan [options] [dir-or-plan]`
+Usage: `terraform plan [options] [dir]`
 
 By default, `plan` requires no flags and looks in the current directory
 for the configuration and state file to refresh.
@@ -60,7 +60,8 @@ The command-line flags are all optional. The list of available flags are:
   plans below.
 
 * `-parallelism=n` - Limit the number of concurrent operation as Terraform
-  [walks the graph](/docs/internals/graph.html#walking-the-graph).
+  [walks the graph](/docs/internals/graph.html#walking-the-graph). Defaults
+  to 10.
 
 * `-refresh=true` - Update the state prior to checking for differences.
 

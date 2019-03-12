@@ -170,12 +170,12 @@ func TestVersionListing(t *testing.T) {
 	}
 
 	if len(versions) != len(expected) {
-		t.Fatalf("Received wrong number of versions. expected: %q, got: %q", expected, versions)
+		t.Fatalf("Received wrong number of versions. expected: %#v, got: %#v", expected, versions)
 	}
 
 	for i, v := range versions {
 		if v.Version != expected[i].Version {
-			t.Fatalf("incorrect version: %q, expected %q", v, expected[i])
+			t.Fatalf("incorrect version: %#v, expected %#v", v, expected[i])
 		}
 	}
 }
@@ -472,6 +472,63 @@ func TestProviderInstallerGet(t *testing.T) {
 		t.Fatalf("test provider contains: %q", f)
 	}
 
+}
+
+// test that the provider installer can install plugins from a plugin cache dir
+// into a target directory that does not exist.
+//  https://github.com/hashicorp/terraform/issues/20532
+func TestProviderInstallerGet_cache(t *testing.T) {
+	server := testReleaseServer()
+	server.Start()
+	defer server.Close()
+
+	tmpDir, err := ioutil.TempDir("", "tf-plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cache := NewLocalPluginCache(filepath.Join(tmpDir, "cache"))
+	targetDir := filepath.Join(tmpDir, "non-existant-dir")
+
+	defer os.RemoveAll(tmpDir)
+
+	i := &ProviderInstaller{
+		Dir:                   targetDir,
+		Cache:                 cache,
+		PluginProtocolVersion: 4,
+		SkipVerify:            true,
+		Ui:                    cli.NewMockUi(),
+		registry:              registry.NewClient(Disco(server), nil),
+		OS:                    "mockos",
+		Arch:                  "mockarch",
+	}
+
+	gotMeta, err := i.Get("test", AllVersions)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// we should have version 1.2.4
+	dest := filepath.Join(targetDir, "terraform-provider-test_v1.2.4")
+
+	wantMeta := PluginMeta{
+		Name:    "test",
+		Version: VersionStr("1.2.4"),
+		Path:    dest,
+	}
+	if !reflect.DeepEqual(gotMeta, wantMeta) {
+		t.Errorf("wrong result meta\ngot:  %#v\nwant: %#v", gotMeta, wantMeta)
+	}
+
+	f, err := ioutil.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// provider should have been unzipped
+	if string(f) != testProviderFile {
+		t.Fatalf("test provider contains: %q", f)
+	}
 }
 
 func TestProviderInstallerPurgeUnused(t *testing.T) {

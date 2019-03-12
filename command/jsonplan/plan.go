@@ -91,7 +91,11 @@ func Marshal(
 	p *plans.Plan,
 	sf *statefile.File,
 	schemas *terraform.Schemas,
+	stateSchemas *terraform.Schemas,
 ) ([]byte, error) {
+	if stateSchemas == nil {
+		stateSchemas = schemas
+	}
 
 	output := newPlan()
 	output.TerraformVersion = version.String()
@@ -120,7 +124,7 @@ func Marshal(
 	}
 
 	// output.PriorState
-	output.PriorState, err = jsonstate.Marshal(sf, schemas)
+	output.PriorState, err = jsonstate.Marshal(sf, stateSchemas)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling prior state: %s", err)
 	}
@@ -131,8 +135,7 @@ func Marshal(
 		return nil, fmt.Errorf("error marshaling config: %s", err)
 	}
 
-	// add some polish
-	ret, err := json.MarshalIndent(output, "", "  ")
+	ret, err := json.Marshal(output)
 	return ret, err
 }
 
@@ -177,7 +180,11 @@ func (p *plan) marshalResourceChanges(changes *plans.Changes, schemas *terraform
 			continue
 		}
 
-		schema, _ := schemas.ResourceTypeConfig(rc.ProviderAddr.ProviderConfig.StringCompact(), addr.Resource.Resource.Mode, addr.Resource.Resource.Type)
+		schema, _ := schemas.ResourceTypeConfig(
+			rc.ProviderAddr.ProviderConfig.Type,
+			addr.Resource.Resource.Mode,
+			addr.Resource.Resource.Type,
+		)
 		if schema == nil {
 			return fmt.Errorf("no schema found for %s", r.Address)
 		}
@@ -242,7 +249,9 @@ func (p *plan) marshalResourceChanges(changes *plans.Changes, schemas *terraform
 			AfterUnknown: a,
 		}
 
-		r.Deposed = rc.DeposedKey == states.NotDeposed
+		if rc.DeposedKey != states.NotDeposed {
+			r.Deposed = rc.DeposedKey.String()
+		}
 
 		key := addr.Resource.Key
 		if key != nil {

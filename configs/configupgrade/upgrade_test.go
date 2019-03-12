@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform/configs/configschema"
 	"github.com/hashicorp/terraform/helper/logging"
 	"github.com/hashicorp/terraform/providers"
+	"github.com/hashicorp/terraform/provisioners"
 	"github.com/hashicorp/terraform/terraform"
 )
 
@@ -39,7 +40,8 @@ func TestUpgradeValid(t *testing.T) {
 			inputDir := filepath.Join(fixtureDir, entry.Name(), "input")
 			wantDir := filepath.Join(fixtureDir, entry.Name(), "want")
 			u := &Upgrader{
-				Providers: providers.ResolverFixed(testProviders),
+				Providers:    providers.ResolverFixed(testProviders),
+				Provisioners: testProvisioners,
 			}
 
 			inputSrc, err := LoadModule(inputDir)
@@ -195,6 +197,7 @@ var testProviders = map[string]providers.Factory{
 						"image":           {Type: cty.String, Optional: true},
 						"tags":            {Type: cty.Map(cty.String), Optional: true},
 						"security_groups": {Type: cty.List(cty.String), Optional: true},
+						"subnet_ids":      {Type: cty.Set(cty.String), Optional: true},
 					},
 					BlockTypes: map[string]*configschema.NestedBlock{
 						"network": {
@@ -242,6 +245,33 @@ var testProviders = map[string]providers.Factory{
 					Attributes: map[string]*configschema.Attribute{
 						"backend": {Type: cty.String, Optional: true},
 					},
+				},
+			},
+		}
+		return p, nil
+	}),
+	"aws": providers.Factory(func() (providers.Interface, error) {
+		// This is here only so we can test the provisioner connection info
+		// migration behavior, which is resource-type specific. Do not use
+		// it in any other tests.
+		p := &terraform.MockProvider{}
+		p.GetSchemaReturn = &terraform.ProviderSchema{
+			ResourceTypes: map[string]*configschema.Block{
+				"aws_instance": {},
+			},
+		}
+		return p, nil
+	}),
+}
+
+var testProvisioners = map[string]provisioners.Factory{
+	"test": provisioners.Factory(func() (provisioners.Interface, error) {
+		p := &terraform.MockProvisioner{}
+		p.GetSchemaResponse = provisioners.GetSchemaResponse{
+			Provisioner: &configschema.Block{
+				Attributes: map[string]*configschema.Attribute{
+					"commands":    {Type: cty.List(cty.String), Optional: true},
+					"interpreter": {Type: cty.String, Optional: true},
 				},
 			},
 		}

@@ -7,9 +7,8 @@ description: The source argument within a module block specifies the location of
 
 # Module Sources
 
-As introduced in [the _Usage_ section](/docs/modules/usage.html), the `source`
-argument in a `module` block tells Terraform where to find the source code
-for the desired child module.
+The `source` argument in [a `module` block](/docs/configuration/modules.html)
+tells Terraform where to find the source code for the desired child module.
 
 Terraform uses this during the module installation step of `terraform init`
 to download the source code to a directory on local disk so that it can be
@@ -331,7 +330,7 @@ module "vpc" {
 
 You can use archives stored in S3 as module sources using the special `s3::`
 prefix, followed by
-[an S3 bucket object URL](http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingBucket.html#access-bucket-intro).
+[a path-style S3 bucket object URL](http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingBucket.html#access-bucket-intro).
 
 ```hcl
 module "consul" {

@@ -431,7 +431,7 @@ func (s *GRPCProviderServer) ReadResource(_ context.Context, req *proto.ReadReso
 		// here we use the prior state to check for unknown/zero containers values
 		// when normalizing the flatmap.
 		stateAttrs := hcl2shim.FlatmapValueFromHCL2(stateVal)
-		newInstanceState.Attributes = normalizeFlatmapContainers(stateAttrs, newInstanceState.Attributes, true)
+		newInstanceState.Attributes = normalizeFlatmapContainers(stateAttrs, newInstanceState.Attributes)
 	}
 
 	if newInstanceState == nil || newInstanceState.ID == "" {
@@ -492,6 +492,8 @@ func (s *GRPCProviderServer) PlanResourceChange(_ context.Context, req *proto.Pl
 		return resp, nil
 	}
 
+	create := priorStateVal.IsNull()
+
 	proposedNewStateVal, err := msgpack.Unmarshal(req.ProposedNewState.Msgpack, block.ImpliedType())
 	if err != nil {
 		resp.Diagnostics = convert.AppendProtoDiag(resp.Diagnostics, err)
@@ -533,7 +535,7 @@ func (s *GRPCProviderServer) PlanResourceChange(_ context.Context, req *proto.Pl
 	}
 
 	// if this is a new instance, we need to make sure ID is going to be computed
-	if priorStateVal.IsNull() {
+	if create {
 		if diff == nil {
 			diff = terraform.NewInstanceDiff()
 		}
@@ -556,10 +558,21 @@ func (s *GRPCProviderServer) PlanResourceChange(_ context.Context, req *proto.Pl
 		priorState = &terraform.InstanceState{}
 	}
 
+	// if we're not creating a new resource, remove any new computed fields
+	if !create {
+		for attr, d := range diff.Attributes {
+			// If there's no change, then don't let this go through as NewComputed.
+			// This usually only happens when Old and New are both empty.
+			if d.NewComputed && d.Old == d.New {
+				delete(diff.Attributes, attr)
+			}
+		}
+	}
+
 	// now we need to apply the diff to the prior state, so get the planned state
 	plannedAttrs, err := diff.Apply(priorState.Attributes, block)
 
-	plannedAttrs = normalizeFlatmapContainers(priorState.Attributes, plannedAttrs, false)
+	plannedAttrs = normalizeFlatmapContainers(priorState.Attributes, plannedAttrs)
 
 	plannedStateVal, err := hcl2shim.HCL2ValueFromFlatmap(plannedAttrs, block.ImpliedType())
 	if err != nil {
@@ -598,7 +611,7 @@ func (s *GRPCProviderServer) PlanResourceChange(_ context.Context, req *proto.Pl
 
 	// if this was creating the resource, we need to set any remaining computed
 	// fields
-	if priorStateVal.IsNull() {
+	if create {
 		plannedStateVal = SetUnknowns(plannedStateVal, block)
 	}
 
@@ -734,6 +747,17 @@ func (s *GRPCProviderServer) ApplyResourceChange(_ context.Context, req *proto.A
 		}
 	}
 
+	// We need to fix any sets that may be using the "~" index prefix to
+	// indicate partially computed. The special sigil isn't really used except
+	// as a clue to visually indicate that the set isn't wholly known.
+	for k, d := range diff.Attributes {
+		if strings.Contains(k, ".~") {
+			delete(diff.Attributes, k)
+			k = strings.Replace(k, ".~", ".", -1)
+			diff.Attributes[k] = d
+		}
+	}
+
 	// add NewExtra Fields that may have been stored in the private data
 	if newExtra := private[newExtraKey]; newExtra != nil {
 		for k, v := range newExtra.(map[string]interface{}) {
@@ -774,7 +798,6 @@ func (s *GRPCProviderServer) ApplyResourceChange(_ context.Context, req *proto.A
 	if err != nil {
 		resp.Diagnostics = convert.AppendProtoDiag(resp.Diagnostics, err)
 	}
-
 	newStateVal := cty.NullVal(block.ImpliedType())
 
 	// Always return a null value for destroy.
@@ -795,7 +818,7 @@ func (s *GRPCProviderServer) ApplyResourceChange(_ context.Context, req *proto.A
 	// here we use the planned state to check for unknown/zero containers values
 	// when normalizing the flatmap.
 	plannedState := hcl2shim.FlatmapValueFromHCL2(plannedStateVal)
-	newInstanceState.Attributes = normalizeFlatmapContainers(plannedState, newInstanceState.Attributes, true)
+	newInstanceState.Attributes = normalizeFlatmapContainers(plannedState, newInstanceState.Attributes)
 
 	// We keep the null val if we destroyed the resource, otherwise build the
 	// entire object, even if the new state was nil.
@@ -806,6 +829,7 @@ func (s *GRPCProviderServer) ApplyResourceChange(_ context.Context, req *proto.A
 	}
 
 	newStateVal = normalizeNullValues(newStateVal, plannedStateVal, false)
+
 	newStateVal = copyTimeoutValues(newStateVal, plannedStateVal)
 
 	newStateMP, err := msgpack.Marshal(newStateVal, block.ImpliedType())
@@ -982,7 +1006,7 @@ func pathToAttributePath(path cty.Path) *proto.AttributePath {
 // allows a provider to set an empty computed container in the state without
 // creating perpetual diff. This can differ slightly between plan and apply, so
 // the apply flag is passed when called from ApplyResourceChange.
-func normalizeFlatmapContainers(prior map[string]string, attrs map[string]string, apply bool) map[string]string {
+func normalizeFlatmapContainers(prior map[string]string, attrs map[string]string) map[string]string {
 	isCount := regexp.MustCompile(`.\.[%#]$`).MatchString
 
 	// While we can't determine if the value was actually computed here, we will
@@ -995,11 +1019,6 @@ func normalizeFlatmapContainers(prior map[string]string, attrs map[string]string
 	for k, v := range prior {
 		if isCount(k) && (v == "0" || v == hcl2shim.UnknownVariableValue) {
 			zeros[k] = true
-		}
-
-		// fixup any 1->0 conversions that happened during Apply
-		if apply && isCount(k) && v == "1" && attrs[k] == "0" {
-			attrs[k] = "1"
 		}
 	}
 
@@ -1094,8 +1113,6 @@ func normalizeFlatmapContainers(prior map[string]string, attrs map[string]string
 			attrs[k] = "1"
 		case len(indexes) > 0:
 			attrs[k] = strconv.Itoa(len(indexes))
-		default:
-			delete(attrs, k)
 		}
 	}
 
@@ -1112,22 +1129,34 @@ func normalizeFlatmapContainers(prior map[string]string, attrs map[string]string
 // the Private/Meta fields. we need to copy those values into the planned state
 // so that core doesn't see a perpetual diff with the timeout block.
 func copyTimeoutValues(to cty.Value, from cty.Value) cty.Value {
-	// if `from` is null, then there are no attributes, and if `to` is null we
-	// are planning to remove it altogether.
-	if from.IsNull() || to.IsNull() {
+	// if `to` is null we are planning to remove it altogether.
+	if to.IsNull() {
 		return to
+	}
+	toAttrs := to.AsValueMap()
+	// We need to remove the key since the hcl2shims will add a non-null block
+	// because we can't determine if a single block was null from the flatmapped
+	// values. This needs to conform to the correct schema for marshaling, so
+	// change the value to null rather than deleting it from the object map.
+	timeouts, ok := toAttrs[schema.TimeoutsConfigKey]
+	if ok {
+		toAttrs[schema.TimeoutsConfigKey] = cty.NullVal(timeouts.Type())
+	}
+
+	// if from is null then there are no timeouts to copy
+	if from.IsNull() {
+		return cty.ObjectVal(toAttrs)
 	}
 
 	fromAttrs := from.AsValueMap()
-	timeouts, ok := fromAttrs[schema.TimeoutsConfigKey]
+	timeouts, ok = fromAttrs[schema.TimeoutsConfigKey]
 
-	// no timeouts to copy
-	// timeouts shouldn't be unknown, but don't copy possibly invalid values
+	// timeouts shouldn't be unknown, but don't copy possibly invalid values either
 	if !ok || timeouts.IsNull() || !timeouts.IsWhollyKnown() {
-		return to
+		// no timeouts block to copy
+		return cty.ObjectVal(toAttrs)
 	}
 
-	toAttrs := to.AsValueMap()
 	toAttrs[schema.TimeoutsConfigKey] = timeouts
 
 	return cty.ObjectVal(toAttrs)
@@ -1266,7 +1295,7 @@ func normalizeNullValues(dst, src cty.Value, plan bool) cty.Value {
 		// If the dst is nil, and the src is known, then we lost an empty value
 		// so take the original.
 		if dst.IsNull() {
-			if src.IsWhollyKnown() && !plan {
+			if src.IsWhollyKnown() && src.LengthInt() == 0 && !plan {
 				return src
 			}
 			return dst

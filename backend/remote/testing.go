@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"testing"
 
 	tfe "github.com/hashicorp/go-tfe"
@@ -96,10 +97,11 @@ func testBackend(t *testing.T, obj cty.Value) (*Remote, func()) {
 	b := New(testDisco(s))
 
 	// Configure the backend so the client is created.
-	valDiags := b.ValidateConfig(obj)
+	newObj, valDiags := b.PrepareConfig(obj)
 	if len(valDiags) != 0 {
 		t.Fatal(valDiags.ErrWithWarnings())
 	}
+	obj = newObj
 
 	confDiags := b.Configure(obj)
 	if len(confDiags) != 0 {
@@ -184,6 +186,7 @@ func testServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/well-known/terraform.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{
+  "state.v2": "/api/v2/",
   "tfe.v2.1": "/api/v2/",
   "versions.v1": "/v1/versions/"
 }`)
@@ -192,12 +195,12 @@ func testServer(t *testing.T) *httptest.Server {
 	// Respond to service version constraints calls.
 	mux.HandleFunc("/v1/versions/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{
-  "service": "tfe.v2.1",
+		io.WriteString(w, fmt.Sprintf(`{
+  "service": "%s",
   "product": "terraform",
   "minimum": "0.1.0",
   "maximum": "10.0.0"
-}`)
+}`, path.Base(r.URL.Path)))
 	})
 
 	// Respond to the initial query to read the hashicorp org entitlements.
@@ -259,6 +262,7 @@ func testServer(t *testing.T) *httptest.Server {
 // localhost to a local test server.
 func testDisco(s *httptest.Server) *disco.Disco {
 	services := map[string]interface{}{
+		"state.v2":    fmt.Sprintf("%s/api/v2/", s.URL),
 		"tfe.v2.1":    fmt.Sprintf("%s/api/v2/", s.URL),
 		"versions.v1": fmt.Sprintf("%s/v1/versions/", s.URL),
 	}

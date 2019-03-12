@@ -135,7 +135,7 @@ func Marshal(sf *statefile.File, schemas *terraform.Schemas) ([]byte, error) {
 		return nil, err
 	}
 
-	ret, err := json.MarshalIndent(output, "", "  ")
+	ret, err := json.Marshal(output)
 	return ret, err
 }
 
@@ -267,7 +267,7 @@ func marshalResources(resources map[string]*states.Resource, schemas *terraform.
 			}
 
 			schema, _ := schemas.ResourceTypeConfig(
-				r.ProviderConfig.ProviderConfig.StringCompact(),
+				r.ProviderConfig.ProviderConfig.Type,
 				r.Addr.Mode,
 				r.Addr.Type,
 			)

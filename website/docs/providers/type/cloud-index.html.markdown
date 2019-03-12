@@ -43,6 +43,8 @@ vendor in close collaboration with HashiCorp, and are tested by HashiCorp.
 
 [Linode](/docs/providers/linode/index.html)
 
+[Naver Cloud](/docs/providers/ncloud/index.html)
+
 [Nutanix](/docs/providers/nutanix/index.html)
 
 [OpenStack](/docs/providers/openstack/index.html)
@@ -70,5 +72,7 @@ vendor in close collaboration with HashiCorp, and are tested by HashiCorp.
 [Triton](/docs/providers/triton/index.html)
 
 [UCloud](/docs/providers/ucloud/index.html)
+
+[Yandex](/docs/providers/yandex/index.html)
 
 [1&1](/docs/providers/oneandone/index.html)
